@@ -13,7 +13,7 @@ pub struct EngineHandle {
 impl EngineHandle {
     pub fn launch() -> Self {
         let (cmd_tx, cmd_rx) = mpsc::sync_channel::<EngineCommand>(8);
-        let (evt_tx, evt_rx) = mpsc::sync_channel::<EngineEvent>(256);
+        let (evt_tx, evt_rx) = mpsc::channel::<EngineEvent>();
         let stop_flag        = Arc::new(AtomicBool::new(false));
         worker::spawn_worker(cmd_rx, evt_tx, stop_flag.clone());
         Self { cmd_tx, evt_rx, stop_flag }

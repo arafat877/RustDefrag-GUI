@@ -142,17 +142,10 @@ impl DefragApp {
 
             EngineEvent::BitmapReady(map) => {
                 self.cluster_map.apply_bitmap(&map);
-                // Build "after" map — compact version
-                let mut after_map = map.clone();
-                let used_cells: usize = map.iter().flat_map(|r| r.iter()).filter(|&&c| c==2).count();
-                let total_cells = MAP_COLS * MAP_ROWS;
-                for r in 0..MAP_ROWS {
-                    for c in 0..MAP_COLS {
-                        let idx = r * MAP_COLS + c;
-                        after_map[r][c] = if idx < used_cells { 2 } else { 0 };
-                    }
+                // Keep the estimated map white while analysis is active.
+                if !matches!(self.phase, Phase::Enumerating | Phase::Analyzing) {
+                    self.update_after_map(map.as_slice());
                 }
-                self.cluster_map_after.apply_bitmap(&after_map);
             }
 
             EngineEvent::EnumProgress { done, total } => {
@@ -187,6 +180,7 @@ impl DefragApp {
                 self.cluster_map.replace_state(4, 3);
                 self.cluster_map.phase    = MapPhase::Complete;
                 self.cluster_map.scan_col = None;
+                self.rebuild_after_map_from_current();
 
                 self.analysis_panel.total_files.set(rep.total_files as f64);
                 self.analysis_panel.fragmented_files.set(rep.fragmented_files as f64);
@@ -322,6 +316,32 @@ impl DefragApp {
         if let Some(t) = self.start_time {
             self.elapsed_secs = t.elapsed().as_secs();
         }
+    }
+    fn update_after_map(&mut self, map: &[Vec<u8>]) {
+        let mut after_map = map.to_vec();
+        let used_cells: usize = map
+            .iter()
+            .flat_map(|r| r.iter())
+            .filter(|&&c| c != 0)
+            .count();
+        for r in 0..MAP_ROWS {
+            for c in 0..MAP_COLS {
+                let idx = r * MAP_COLS + c;
+                after_map[r][c] = if idx < used_cells { 2 } else { 0 };
+            }
+        }
+        self.cluster_map_after.apply_bitmap(&after_map);
+    }
+
+    fn rebuild_after_map_from_current(&mut self) {
+        let mut map = vec![vec![0u8; MAP_COLS]; MAP_ROWS];
+        for r in 0..MAP_ROWS {
+            for c in 0..MAP_COLS {
+                let idx = r * MAP_COLS + c;
+                map[r][c] = self.cluster_map.cells[idx].state;
+            }
+        }
+        self.update_after_map(&map);
     }
 }
 
@@ -498,6 +518,7 @@ impl DefragApp {
                 self.status_msg     = "Starting analysis…".into();
                 self.start_timer();
                 self.cluster_map    = ClusterMap::new();
+                self.cluster_map_after = ClusterMap::new();
                 self.engine.send(EngineCommand::StartAnalysis { drive: self.selected_drive.clone() });
             }
             ui.add_space(4.0);
@@ -561,19 +582,25 @@ impl DefragApp {
         // Left column: volume info + analysis stats
         let left_w = 180.0;
         let left_rect = Rect::from_min_size(rect.min, Vec2::new(left_w, rect.height()));
-        let left_box_h = (rect.height() - 2.0 * pad) / 3.0;
-        let vol_rect = Rect::from_min_size(left_rect.min, Vec2::new(left_w, left_box_h));
+        let left_total_h = rect.height() - 2.0 * pad;
+        // Match panel heights to how much content each panel actually renders.
+        let units = 6.0 + 6.0 + 8.0;
+        let vol_h = left_total_h * (6.0 / units);
+        let analysis_h = left_total_h * (6.0 / units);
+        let defrag_h = left_total_h - vol_h - analysis_h;
+
+        let vol_rect = Rect::from_min_size(left_rect.min, Vec2::new(left_w, vol_h));
         self.vol_panel.draw(painter, vol_rect);
 
         let analysis_rect = Rect::from_min_size(
             Pos2::new(left_rect.min.x, vol_rect.max.y + pad),
-            Vec2::new(left_w, left_box_h),
+            Vec2::new(left_w, analysis_h),
         );
         self.analysis_panel.draw(painter, analysis_rect);
 
         let defrag_rect = Rect::from_min_size(
             Pos2::new(left_rect.min.x, analysis_rect.max.y + pad),
-            Vec2::new(left_w, left_box_h),
+            Vec2::new(left_w, defrag_h),
         );
         self.defrag_panel.draw(painter, defrag_rect);
 
@@ -839,3 +866,5 @@ fn fmt_large(v: u64) -> String {
     else if v >= 1_000 { format!("{:.1}K", v as f64 / 1_000.0) }
     else { v.to_string() }
 }
+
+

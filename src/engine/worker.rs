@@ -17,7 +17,7 @@ const MAP_ROWS: usize = 25;
 
 pub fn spawn_worker(
     cmd_rx:   mpsc::Receiver<EngineCommand>,
-    evt_tx:   mpsc::SyncSender<EngineEvent>,
+    evt_tx:   mpsc::Sender<EngineEvent>,
     stop_flag: Arc<AtomicBool>,
 ) {
     std::thread::Builder::new()
@@ -30,7 +30,7 @@ pub fn spawn_worker(
 
 fn run_loop(
     cmd_rx:   mpsc::Receiver<EngineCommand>,
-    evt_tx:   mpsc::SyncSender<EngineEvent>,
+    evt_tx:   mpsc::Sender<EngineEvent>,
     stop_flag: Arc<AtomicBool>,
 ) {
     while let Ok(cmd) = cmd_rx.recv() {
@@ -50,15 +50,15 @@ fn run_loop(
     }
 }
 
-fn send(tx: &mpsc::SyncSender<EngineEvent>, ev: EngineEvent) {
-    if tx.try_send(ev).is_err() {
-        warn!("Event channel full — dropping event");
+fn send(tx: &mpsc::Sender<EngineEvent>, ev: EngineEvent) {
+    if tx.send(ev).is_err() {
+        warn!("Engine event receiver disconnected");
     }
 }
 
 fn run_analysis(
     drive:     &str,
-    tx:        &mpsc::SyncSender<EngineEvent>,
+    tx:        &mpsc::Sender<EngineEvent>,
     stop_flag: &Arc<AtomicBool>,
 ) {
     info!("Analysis starting on {}", drive);
@@ -71,8 +71,6 @@ fn run_analysis(
         Err(e) => { send(tx, EngineEvent::Error(e.to_string())); return; }
     };
     send(tx, EngineEvent::VolumeReady(Box::new(vol_info.clone())));
-    // Immediate first paint so UI doesn't look idle before bitmap retrieval starts.
-    send(tx, EngineEvent::BitmapReady(estimated_map_from_usage(vol_info.used_pct())));
 
     // Best effort: try opening the raw volume read-only for bitmap visualization.
     // If this fails (e.g. not elevated), continue analysis without the cluster map.
@@ -80,7 +78,6 @@ fn run_analysis(
         Ok(r) => r,
         Err(_) => {
             info!("Raw volume open unavailable for analysis on {}", drive_label);
-            send(tx, EngineEvent::BitmapReady(estimated_map_from_usage(vol_info.used_pct())));
             // Enumerate/analyse can still proceed.
             let root = std::path::PathBuf::from(format!("{}\\", drive_label));
             let files = match volume::enumerate_files(&root) {
@@ -168,7 +165,7 @@ fn run_defrag(
     drive:        &str,
     compact_mode: bool,
     boot_fallback:bool,
-    tx:           &mpsc::SyncSender<EngineEvent>,
+    tx:        &mpsc::Sender<EngineEvent>,
     stop_flag:    &Arc<AtomicBool>,
 ) {
     info!("Defrag starting on {} (compact={}, boot_fb={})", drive, compact_mode, boot_fallback);
@@ -377,3 +374,4 @@ fn runs_to_cluster_events(runs: &[crate::defrag_engine::winapi::ClusterRun], tot
     }
     out
 }
+

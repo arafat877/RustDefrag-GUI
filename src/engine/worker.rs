@@ -71,6 +71,8 @@ fn run_analysis(
         Err(e) => { send(tx, EngineEvent::Error(e.to_string())); return; }
     };
     send(tx, EngineEvent::VolumeReady(Box::new(vol_info.clone())));
+    // Immediate first paint so UI doesn't look idle before bitmap retrieval starts.
+    send(tx, EngineEvent::BitmapReady(estimated_map_from_usage(vol_info.used_pct())));
 
     // Best effort: try opening the raw volume read-only for bitmap visualization.
     // If this fails (e.g. not elevated), continue analysis without the cluster map.
@@ -312,12 +314,12 @@ fn runs_to_cluster_events(runs: &[crate::defrag_engine::winapi::ClusterRun], tot
             continue;
         }
         // Mark both run boundaries and a few interior points so long runs paint the map.
-        out.push((run.lcn, 3));
-        out.push((run.lcn + run.length - 1, 3));
+        out.push((run.lcn, 4));
+        out.push((run.lcn + run.length - 1, 4));
         let steps = run.length.min(8);
         for i in 1..steps {
             let lcn = run.lcn + (run.length * i) / steps;
-            out.push((lcn, 3));
+            out.push((lcn, 4));
         }
     }
     out

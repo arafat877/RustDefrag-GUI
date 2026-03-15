@@ -93,6 +93,16 @@ impl ClusterMap {
         cell.anim_t = 0.0;
     }
 
+    pub fn replace_state(&mut self, from: u8, to: u8) {
+        for cell in &mut self.cells {
+            if cell.state == from {
+                cell.state = to;
+                cell.target = state_color(to);
+                cell.anim_t = 0.0;
+            }
+        }
+    }
+
     /// Advance animations by dt seconds.
     pub fn tick(&mut self, dt: f32) {
         let speed = 6.0; // lerp speed (state transitions/sec)

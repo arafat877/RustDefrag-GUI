@@ -184,7 +184,7 @@ fn defrag_single(
                 mark(bitmap, run.lcn,  run.length, false); // src → free
                 mark(bitmap, dest_lcn, run.length, true);  // dst → used
                 events.push((run.lcn,  0u8)); // source freed
-                events.push((dest_lcn, 5u8)); // dest done
+                events.push((dest_lcn, 4u8)); // dest moving
                 moved    += run.length as u64;
                 dest_lcn += run.length;
             }

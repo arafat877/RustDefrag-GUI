@@ -10,7 +10,7 @@ pub const COLOR_FREE:     Color32 = Color32::from_rgb(240, 242, 246);
 pub const COLOR_SYSTEM:   Color32 = Color32::from_rgb(235, 200, 70);
 pub const COLOR_USED:     Color32 = Color32::from_rgb(88, 145, 210);
 pub const COLOR_FRAG:     Color32 = Color32::from_rgb(232, 117, 110);
-pub const COLOR_MOVING:   Color32 = Color32::from_rgb(90, 188, 92);
+pub const COLOR_MOVING:   Color32 = Color32::from_rgb(232, 70, 70);
 pub const COLOR_DONE:     Color32 = Color32::from_rgb(90, 188, 92);
 
 pub const COLOR_FREE_BRT:   Color32 = Color32::from_rgb(6,   16,  30);

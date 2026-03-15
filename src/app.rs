@@ -184,6 +184,7 @@ impl DefragApp {
             EngineEvent::AnalysisComplete(rep) => {
                 self.phase         = Phase::AnalysisDone;
                 self.scan_progress = 1.0;
+                self.cluster_map.replace_state(4, 3);
                 self.cluster_map.phase    = MapPhase::Complete;
                 self.cluster_map.scan_col = None;
 
@@ -269,6 +270,7 @@ impl DefragApp {
             EngineEvent::DefragComplete(stats) => {
                 self.phase         = Phase::DefragDone;
                 self.defrag_progress = 1.0;
+                self.cluster_map.replace_state(4, 5);
                 self.cluster_map.phase = MapPhase::Complete;
 
                 self.defrag_panel.attempted.set(stats.files_attempted as f64);
@@ -580,13 +582,13 @@ impl DefragApp {
         let map_w    = rect.width() - left_w - pad;
         let map_h    = (rect.height() - pad) / 2.0;
 
-        let map1_rect = Rect::from_min_size(Pos2::new(map_x, rect.min.y), Vec2::new(map_w, map_h - 4.0));
-        let map2_rect = Rect::from_min_size(Pos2::new(map_x, rect.min.y + map_h + 4.0), Vec2::new(map_w, map_h - 4.0));
+        let map1_rect = Rect::from_min_size(Pos2::new(map_x, rect.min.y), Vec2::new(map_w, map_h));
+        let map2_rect = Rect::from_min_size(Pos2::new(map_x, map1_rect.max.y + pad), Vec2::new(map_w, map_h));
 
         // Map labels
-        draw_bold_label_right(
+        draw_bold_label(
             painter,
-            Pos2::new(map1_rect.max.x - 8.0, map1_rect.min.y + 12.0),
+            Pos2::new(map1_rect.min.x + 8.0, map1_rect.min.y + 12.0),
             "CURRENT DISK USAGE",
             with_alpha(TEXT_LABEL, 160),
         );
@@ -597,14 +599,14 @@ impl DefragApp {
             with_alpha(TEXT_LABEL, 160),
         );
 
-        let map1_inner = Rect::from_min_size(Pos2::new(map1_rect.min.x, map1_rect.min.y + 18.0), Vec2::new(map_w, map_h - 26.0));
-        let map2_inner = Rect::from_min_size(Pos2::new(map2_rect.min.x, map2_rect.min.y + 18.0), Vec2::new(map_w, map_h - 26.0));
+        let map1_inner = Rect::from_min_size(Pos2::new(map1_rect.min.x, map1_rect.min.y + 18.0), Vec2::new(map_w, map_h - 24.0));
+        let map2_inner = Rect::from_min_size(Pos2::new(map2_rect.min.x, map2_rect.min.y + 18.0), Vec2::new(map_w, map_h - 24.0));
 
         self.cluster_map.draw(painter, map1_inner, time);
         self.cluster_map_after.draw(painter, map2_inner, time);
 
         // Legend aligned on the top row with the CURRENT DISK USAGE title.
-        draw_legend(painter, Pos2::new(map1_rect.min.x + 8.0, map1_rect.min.y + 12.0));
+        draw_legend_right(painter, Pos2::new(map1_rect.max.x - 8.0, map1_rect.min.y + 12.0));
     }
 
     // ── Charts tab ────────────────────────────────────────────────────────────
@@ -773,19 +775,20 @@ impl DefragApp {
                 _                 => ACCENT,
             };
             painter.rect_filled(fill_rect, Rounding::same(1.5), fill_color);
-            // Shimmer
-            let sh   = shimmer(time);
-            let sh_w = fill_w * 0.15;
-            let sh_x = fill_rect.min.x + sh * fill_w;
-            let sh_r = Rect::from_min_size(Pos2::new(sh_x, track_rect.min.y), Vec2::new(sh_w, 3.0));
-            painter.rect_filled(sh_r, Rounding::same(1.5), with_alpha(Color32::WHITE, 60));
+            if matches!(self.phase, Phase::Analyzing | Phase::Defragging) && pct < 1.0 {
+                let sh   = shimmer(time);
+                let sh_w = (fill_w * 0.15).min(fill_w);
+                let sh_x = fill_rect.min.x + sh * (fill_w - sh_w).max(0.0);
+                let sh_r = Rect::from_min_size(Pos2::new(sh_x, track_rect.min.y), Vec2::new(sh_w, 3.0));
+                painter.rect_filled(sh_r, Rounding::same(1.5), with_alpha(Color32::WHITE, 60));
+            }
         }
     }
 }
 
 // ── Legend helper ─────────────────────────────────────────────────────────────
 
-fn draw_legend(painter: &Painter, pos: Pos2) {
+fn draw_legend_right(painter: &Painter, right_pos: Pos2) {
     let items: &[(Color32, &str)] = &[
         (COLOR_FREE,   "Free"),
         (COLOR_SYSTEM, "System"),
@@ -794,13 +797,29 @@ fn draw_legend(painter: &Painter, pos: Pos2) {
         (COLOR_MOVING, "Moving"),
         (COLOR_DONE,   "Done"),
     ];
-    let sw = 10.0; let sh = 7.0; let gap = 48.0;
+    let sw = 10.0;
+    let sh = 7.0;
+    let font = FontId::new(8.0, FontFamily::Monospace);
+    let max_len = items.iter().map(|(_, label)| label.len()).max().unwrap_or(1) as f32;
+    let char_w = painter
+        .layout_no_wrap("M".to_string(), font.clone(), TEXT_DIM)
+        .size()
+        .x
+        .max(4.0);
+    let item_w = sw + 3.0 + (max_len + 2.0) * char_w;
+    let total_w = item_w * items.len() as f32;
+    let start_x = right_pos.x - total_w;
     for (i, (col, label)) in items.iter().enumerate() {
-        let x = pos.x + i as f32 * gap;
-        let swatch = Rect::from_min_size(Pos2::new(x, pos.y - sh * 0.5), Vec2::new(sw, sh));
+        let x = start_x + i as f32 * item_w;
+        let swatch = Rect::from_min_size(Pos2::new(x, right_pos.y - sh * 0.5), Vec2::new(sw, sh));
         painter.rect_filled(swatch, Rounding::same(1.5), *col);
-        painter.text(Pos2::new(x + sw + 3.0, pos.y), egui::Align2::LEFT_CENTER,
-            label, FontId::new(8.0, FontFamily::Proportional), TEXT_DIM);
+        painter.text(
+            Pos2::new(x + sw + 3.0, right_pos.y),
+            egui::Align2::LEFT_CENTER,
+            label,
+            font.clone(),
+            TEXT_DIM,
+        );
     }
 }
 
@@ -810,11 +829,6 @@ fn draw_bold_label(painter: &Painter, pos: Pos2, text: &str, color: Color32) {
     painter.text(pos + Vec2::new(0.7, 0.0), egui::Align2::LEFT_CENTER, text, font, color);
 }
 
-fn draw_bold_label_right(painter: &Painter, pos: Pos2, text: &str, color: Color32) {
-    let font = FontId::new(8.5, FontFamily::Monospace);
-    painter.text(pos, egui::Align2::RIGHT_CENTER, text, font.clone(), color);
-    painter.text(pos + Vec2::new(0.7, 0.0), egui::Align2::RIGHT_CENTER, text, font, color);
-}
 
 // ── Color re-exports for cluster_map ─────────────────────────────────────────
 

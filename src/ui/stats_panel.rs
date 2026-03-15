@@ -71,9 +71,11 @@ impl VolumeStatsPanel {
             }, AMBER),
         ];
 
-        let row_h = rect.height() / items.len() as f32;
+        let inner = rect.shrink(8.0);
+        let start_y = inner.min.y + 24.0;
+        let row_h = (inner.height() - 28.0) / 8.0;
         for (i, (k, v, vc)) in items.iter().enumerate() {
-            let y = rect.min.y + i as f32 * row_h + row_h * 0.5;
+            let y = start_y + i as f32 * row_h + row_h * 0.5;
             let key_pos = Pos2::new(rect.min.x + 10.0, y);
             let key_color = with_alpha(TEXT_LABEL, (200.0 * t) as u8);
             if *k == "Volume" {
@@ -95,7 +97,7 @@ impl VolumeStatsPanel {
         }
         // Separator lines
         for i in 1..items.len() {
-            let y = rect.min.y + i as f32 * row_h;
+            let y = start_y + i as f32 * row_h;
             painter.line_segment(
                 [Pos2::new(rect.min.x + 8.0, y), Pos2::new(rect.max.x - 8.0, y)],
                 Stroke::new(0.5, with_alpha(TEXT_LABEL, 40)),

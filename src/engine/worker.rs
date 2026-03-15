@@ -109,14 +109,19 @@ fn run_analysis(
                 send(tx, EngineEvent::Stopped);
                 return;
             }
+            let mut final_map = estimated_map_from_usage(vol_info.used_pct());
+            overlay_fragmented_runs_on_map(&mut final_map, &report.fragmented, vol_info.total_clusters);
+            send(tx, EngineEvent::BitmapReady(final_map));
             send(tx, EngineEvent::AnalysisComplete(Box::new(report)));
             return;
         }
     };
 
     // Load bitmap for cluster map display
+    let mut analysis_bitmap: Option<VolumeBitmap> = None;
     if let Ok(bm) = volume::load_bitmap(&vol_handle) {
         send(tx, EngineEvent::BitmapReady(bitmap_to_map(&bm, &drive_label)));
+        analysis_bitmap = Some(bm);
     }
 
     // Enumerate files
@@ -149,6 +154,13 @@ fn run_analysis(
         return;
     }
 
+    let mut final_map = if let Some(bm) = &analysis_bitmap {
+        bitmap_to_map(bm, &drive_label)
+    } else {
+        estimated_map_from_usage(vol_info.used_pct())
+    };
+    overlay_fragmented_runs_on_map(&mut final_map, &report.fragmented, vol_info.total_clusters);
+    send(tx, EngineEvent::BitmapReady(final_map));
     send(tx, EngineEvent::AnalysisComplete(Box::new(report)));
 }
 
@@ -282,6 +294,15 @@ fn bitmap_to_map(bm: &VolumeBitmap, _label: &str) -> Vec<Vec<u8>> {
             };
         }
     }
+    // Ensure metadata/system area is visible near the start of disk.
+    let sys_cells = (MAP_COLS * MAP_ROWS / 120).max(16);
+    for idx in 0..sys_cells {
+        let r = idx / MAP_COLS;
+        let c = idx % MAP_COLS;
+        if r < MAP_ROWS && map[r][c] != 0 {
+            map[r][c] = 1;
+        }
+    }
     map
 }
 
@@ -296,12 +317,44 @@ fn estimated_map_from_usage(used_pct: f64) -> Vec<Vec<u8>> {
             if idx < used_cells {
                 // Sprinkle some fragmented cells to make activity visible.
                 map[row][col] = if idx % 17 == 0 { 3 } else { 2 };
+                if idx < (MAP_COLS * MAP_ROWS / 120).max(16) {
+                    map[row][col] = 1;
+                }
             } else {
                 map[row][col] = 0;
             }
         }
     }
     map
+}
+
+fn overlay_fragmented_runs_on_map(
+    map: &mut [Vec<u8>],
+    files: &[crate::defrag_engine::analyzer::FileFragInfo],
+    total_clusters: i64,
+) {
+    if total_clusters <= 0 {
+        return;
+    }
+    for fi in files {
+        for run in &fi.runs {
+            if run.length <= 0 {
+                continue;
+            }
+            // Paint deterministic sample points across each run.
+            let steps = run.length.min(8);
+            for i in 0..steps {
+                let lcn = run.lcn + (run.length * i) / steps.max(1);
+                let frac = (lcn as f64 / total_clusters as f64).clamp(0.0, 0.9999);
+                let cell_idx = (frac * (MAP_COLS * MAP_ROWS) as f64) as usize;
+                let row = cell_idx / MAP_COLS;
+                let col = cell_idx % MAP_COLS;
+                if row < MAP_ROWS && col < MAP_COLS {
+                    map[row][col] = 3;
+                }
+            }
+        }
+    }
 }
 
 fn runs_to_cluster_events(runs: &[crate::defrag_engine::winapi::ClusterRun], total_clusters: i64) -> Vec<(i64, u8)> {

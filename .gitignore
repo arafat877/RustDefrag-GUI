@@ -1,0 +1,17 @@
+# Binaries and build artifacts
+/target/
+
+# Rust/Cargo
+**/*.rs.bk
+
+# IDE / Editor
+.vscode/
+.idea/
+*.code-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

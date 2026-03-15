@@ -1,0 +1,41 @@
+[package]
+name = "rust-defrag-gui"
+version = "0.2.0"
+edition = "2021"
+authors = ["arafat877 <https://github.com/arafat877>"]
+description = "RustDefrag — NTFS Defragmentation Utility with Filthy-Rich-Client GUI"
+license = "MIT"
+repository = "https://github.com/arafat877/rust-defrag"
+
+[[bin]]
+name = "defrag-gui"
+path = "src/main.rs"
+
+[dependencies]
+eframe     = "0.29"
+egui       = "0.29"
+egui_plot  = "0.29"
+rayon      = "1.8"
+anyhow     = "1"
+log        = "0.4"
+env_logger = "0.10"
+chrono     = { version = "0.4", features = ["serde"] }
+serde      = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.54", features = [
+    "Win32_Foundation",
+    "Win32_System_IO",
+    "Win32_Storage_FileSystem",
+    "Win32_Security",
+    "Win32_System_Threading",
+    "Win32_System_SystemServices",
+    "Win32_System_Registry",
+] }
+
+[profile.release]
+opt-level     = 3
+lto           = true
+codegen-units = 1
+strip         = true
